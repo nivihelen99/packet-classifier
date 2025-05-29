@@ -32,6 +32,8 @@ private:
     int active_readers_;    // Number of threads currently holding a read lock
     int waiting_writers_;   // Number of threads waiting for a write lock
     bool writer_active_;    // True if a writer holds the lock
+    std::thread::id writer_thread_id_;
+    int recursive_write_count_;
 };
 
 // RAII wrapper for ReadLock

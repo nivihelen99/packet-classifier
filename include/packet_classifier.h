@@ -217,7 +217,7 @@ private:
     // --- Private Helper Methods ---
     // These methods will now operate on rule data obtained from the RuleManager.
     // They are responsible for updating the Tries, IntervalTrees, BloomFilter based on rule changes.
-    bool updateSpecializedStructuresForRule(int rule_id); // Called on add or modify
+    bool updateSpecializedStructuresForRule(const ClassificationRule& rule); // Called on add or modify
     bool removeRuleFromSpecializedStructures(int rule_id); // Called on delete
 
     // Helper to convert string IP prefix to a format usable by CompressedTrie (e.g., bit string or uint/mask)

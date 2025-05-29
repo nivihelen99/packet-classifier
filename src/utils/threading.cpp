@@ -5,7 +5,7 @@
 #include <chrono>       // For sleep_for
 
 // --- ReadWriteLock Implementation ---
-ReadWriteLock::ReadWriteLock() : active_readers_(0), waiting_writers_(0), writer_active_(false) {
+ReadWriteLock::ReadWriteLock() : active_readers_(0), waiting_writers_(0), writer_active_(false), writer_thread_id_(), recursive_write_count_(0) {
     // std::cout << "ReadWriteLock created." << std::endl;
 }
 
@@ -44,24 +44,55 @@ bool ReadWriteLock::tryReadLock() {
 }
 
 void ReadWriteLock::writeLock() {
+    std::thread::id current_tid = std::this_thread::get_id();
     std::unique_lock<std::mutex> lock(mutex_);
+
+    if (writer_active_ && writer_thread_id_ == current_tid) {
+        // Recursive call by the same thread
+        recursive_write_count_++;
+        return;
+    }
+
+    // Wait if there are active readers or another writer
     waiting_writers_++;
-    // Wait if there are active readers or an active writer.
-    writer_cv_.wait(lock, [this] { return active_readers_ == 0 && !writer_active_; });
+    writer_cv_.wait(lock, [this] { 
+        return !writer_active_ && active_readers_ == 0;
+    });
     waiting_writers_--;
     writer_active_ = true;
+    writer_thread_id_ = current_tid;
+    recursive_write_count_ = 1;
 }
 
 void ReadWriteLock::writeUnlock() {
     std::unique_lock<std::mutex> lock(mutex_);
-    writer_active_ = false;
-    // Notify all waiting readers first (common strategy, fairness can vary)
-    // then notify any waiting writers (if readers don't take over).
-    if (waiting_writers_ > 0) {
-        writer_cv_.notify_one(); // Prefer other writers to avoid starvation if many readers queue up
-    } else {
-        reader_cv_.notify_all(); // No writers waiting, wake up all readers
+
+    if (!writer_active_ || writer_thread_id_ != std::this_thread::get_id()) {
+        // Not locked by this writer or not locked at all.
+        // This case should ideally not happen if lock/unlock are used correctly.
+        // Consider logging an error or throwing an exception for debugging.
+        // For example:
+        // if (writer_active_) {
+        //     std::cerr << "Error: writeUnlock called by a different thread than the one holding the lock." << std::endl;
+        // } else {
+        //     std::cerr << "Error: writeUnlock called when lock not writer_active." << std::endl;
+        // }
+        return; 
     }
+
+    recursive_write_count_--;
+    if (recursive_write_count_ == 0) {
+        writer_active_ = false;
+        writer_thread_id_ = std::thread::id(); // Reset thread ID
+
+        // Original notification logic: Prefer writers, then readers.
+        if (waiting_writers_ > 0) {
+            writer_cv_.notify_one();
+        } else {
+            reader_cv_.notify_all();
+        }
+    }
+    // If recursive_write_count_ > 0, the lock is still held by this writer.
 }
 
 bool ReadWriteLock::tryWriteLock() {

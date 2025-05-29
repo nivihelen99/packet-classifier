@@ -19,7 +19,7 @@ bool RuleManager::addRule(const ClassificationRule& rule) {
         return false;
     }
 
-    if (detectConflict(rule)) { // Placeholder call
+    if (detectConflict_nolock(rule)) { // Placeholder call
         logger_.warning("RuleManager: Failed to add rule ID " + std::to_string(rule.rule_id) + ". Conflict detected.");
         return false;
     }
@@ -72,7 +72,7 @@ bool RuleManager::modifyRule(int rule_id, const ClassificationRule& new_rule_dat
     // For simpler placeholder detectConflict, this might not be needed.
 
     // Pass the original rule_id to detectConflict so it can ignore the rule being modified if necessary.
-    if (detectConflict(temp_new_rule)) { 
+    if (detectConflict_nolock(temp_new_rule)) { 
          // Ensure the rule being modified is not considered in conflict with itself if `detectConflict` isn't smart about it.
          // This depends on detectConflict implementation. For now, assume it's a simple check.
         logger_.warning("RuleManager: Failed to modify rule ID " + std::to_string(rule_id) + ". Conflict detected with new data.");
@@ -135,17 +135,24 @@ std::map<int, const ClassificationRule*> RuleManager::getAllRules() const {
     return all_rules_snapshot;
 }
 
+// New private method
+bool RuleManager::detectConflict_nolock(const ClassificationRule& /*rule*/) const {
+    // logger_.debug("RuleManager: detectConflict_nolock called (placeholder - always returns false)."); 
+    // A real implementation would iterate through rules_by_id_ or rules_by_priority_cache_
+    // and compare filter criteria of 'rule' with existing rules.
+    // Ensure this method does NOT try to take any locks on rw_lock_.
+    logger_.debug("RuleManager: detectConflict_nolock called (placeholder - always returns false).");
+    return false;
+}
 
-bool RuleManager::detectConflict(const ClassificationRule& /*rule*/) const {
+bool RuleManager::detectConflict(const ClassificationRule& rule) const {
     // Placeholder for conflict detection logic.
     // This could involve checking for overlapping filters with same priority, etc.
     // For now, assume no conflicts.
     // A real implementation would iterate through existing rules and compare filter criteria.
     ReadLockGuard lock(rw_lock_); // ensure thread safety if accessing shared rule data
-    logger_.debug("RuleManager: detectConflict called (placeholder - always returns false).");
-    // A real implementation would iterate through rules_by_id_ or rules_by_priority_cache_
-    // and compare filter criteria of 'rule' with existing rules.
-    return false; 
+    // logger_.debug("RuleManager: public detectConflict called, acquired read lock."); // Optional: new log line for clarity
+    return detectConflict_nolock(rule); 
 }
 
 // --- Statistics Management ---

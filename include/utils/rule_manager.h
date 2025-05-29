@@ -56,6 +56,7 @@ private:
     
     // Rebuilds rules_by_priority_cache_ from rules_by_id_
     void rebuildPriorityCache();
+    bool detectConflict_nolock(const ClassificationRule& rule) const;
 
     mutable ReadWriteLock rw_lock_; // Protects rules_by_id_ and rules_by_priority_cache_
     Logger& logger_;

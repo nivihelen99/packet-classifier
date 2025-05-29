@@ -105,7 +105,7 @@ bool PacketClassifier::addRule(const ClassificationRule& rule) {
     // If RuleManager added it successfully, update specialized structures
     {
         WriteLockGuard spec_lock(specialized_structures_lock_);
-        if (!updateSpecializedStructuresForRule(rule.rule_id)) {
+        if (!updateSpecializedStructuresForRule(rule)) {
             // This is a potential inconsistency state. Specialized structure update failed.
             // Rollback rule addition in RuleManager? Or mark rule as inactive?
             // For now, log error. A robust system needs a clear strategy here.
@@ -116,12 +116,14 @@ bool PacketClassifier::addRule(const ClassificationRule& rule) {
             return false; // Indicate overall failure
         }
 
-        if (use_bloom_filter_) {
-            const ClassificationRule* added_rule = rule_manager_->getRule(rule.rule_id);
-            if (added_rule && added_rule->enabled) {
-                 bloom_filter_->insert(added_rule->filter.toString());
-            }
-        }
+        // The following block has been removed as updateSpecializedStructuresForRule(rule)
+        // is now responsible for handling the Bloom Filter update.
+        // if (use_bloom_filter_) {
+        //     const ClassificationRule* added_rule = rule_manager_->getRule(rule.rule_id);
+        //     if (added_rule && added_rule->enabled) {
+        //          bloom_filter_->insert(added_rule->filter.toString());
+        //     }
+        // }
     }
     logger_.info("PacketClassifier: Rule ID " + std::to_string(rule.rule_id) + " processed successfully.");
     return true;
@@ -175,20 +177,22 @@ bool PacketClassifier::modifyRule(int rule_id, const ClassificationRule& new_rul
              logger_.warning("PacketClassifier: Could not remove old state of modified rule ID " + std::to_string(rule_id) + 
                              " from specialized structures (may not have been there or error).");
         }
-        if (!updateSpecializedStructuresForRule(rule_id)) {
+        if (!updateSpecializedStructuresForRule(new_rule_data)) {
             logger_.error("PacketClassifier: Rule ID " + std::to_string(rule_id) + 
                           " modified in RuleManager, but failed to update specialized structures. Potential inconsistency.");
             // Potential rollback or error state needed.
             return false;
         }
 
-        if (use_bloom_filter_) {
-            const ClassificationRule* modified_rule = rule_manager_->getRule(rule_id);
-            if (modified_rule && modified_rule->enabled) {
-                // Add new representation. Old one is not explicitly removed from Bloom Filter.
-                bloom_filter_->insert(modified_rule->filter.toString());
-            }
-        }
+        // The following block has been removed as updateSpecializedStructuresForRule(new_rule_data)
+        // is now responsible for handling the Bloom Filter update.
+        // if (use_bloom_filter_) {
+        //     const ClassificationRule* modified_rule = rule_manager_->getRule(rule_id);
+        //     if (modified_rule && modified_rule->enabled) {
+        //         // Add new representation. Old one is not explicitly removed from Bloom Filter.
+        //         bloom_filter_->insert(modified_rule->filter.toString());
+        //     }
+        // }
     }
     logger_.info("PacketClassifier: Rule ID " + std::to_string(rule_id) + " modified successfully.");
     return true;
@@ -352,48 +356,45 @@ void PacketClassifier::resetRuleStatistics(int rule_id) {
 // Note: These helpers now operate with rule_id and fetch rule data from RuleManager.
 // They also need to use specialized_structures_lock_ for their operations.
 
-bool PacketClassifier::updateSpecializedStructuresForRule(int rule_id) {
+bool PacketClassifier::updateSpecializedStructuresForRule(const ClassificationRule& rule) {
     WriteLockGuard spec_lock(specialized_structures_lock_);
-    const ClassificationRule* rule = rule_manager_->getRule(rule_id);
-    if (!rule) {
-        logger_.error("PacketClassifier: Cannot update specialized structures. Rule ID " + std::to_string(rule_id) + " not found in RuleManager.");
-        return false;
-    }
-    logger_.trace("PacketClassifier: Updating specialized structures for rule ID: " + std::to_string(rule->rule_id));
+    // Removed: const ClassificationRule* rule_ptr = rule_manager_->getRule(rule_id);
+    // Removed: null check for rule_ptr
+    logger_.trace("PacketClassifier: Updating specialized structures for rule ID: " + std::to_string(rule.rule_id));
     
     // Placeholder for complex logic.
     // Example for source IP prefix:
-    if (rule->enabled && !rule->filter.source_ip_prefix.empty()) {
-        // Conceptual: source_ip_trie_->insert(parsed_prefix, rule->rule_id);
-        // Where parsed_prefix is derived from rule->filter.source_ip_prefix.
-        // The trie should associate this prefix with rule->rule_id.
-        logger_.debug("Conceptual: Add src_ip_prefix '" + rule->filter.source_ip_prefix + "' from rule " + std::to_string(rule->rule_id) + " to source_ip_trie_.");
-    } else if (!rule->enabled && !rule->filter.source_ip_prefix.empty()) {
+    if (rule.enabled && !rule.filter.source_ip_prefix.empty()) {
+        // Conceptual: source_ip_trie_->insert(parsed_prefix, rule.rule_id);
+        // Where parsed_prefix is derived from rule.filter.source_ip_prefix.
+        // The trie should associate this prefix with rule.rule_id.
+        logger_.debug("Conceptual: Add src_ip_prefix '" + rule.filter.source_ip_prefix + "' from rule " + std::to_string(rule.rule_id) + " to source_ip_trie_.");
+    } else if (!rule.enabled && !rule.filter.source_ip_prefix.empty()) {
         // If a rule is being updated to 'disabled', its components should be removed from matching structures.
         // This logic is better handled by removeRuleFromSpecializedStructures, then calling update.
         // For now: if disabled, we don't add. If it was enabled before, it should have been removed.
-        logger_.debug("Conceptual: Rule " + std::to_string(rule->rule_id) + " is disabled. Ensure src_ip_prefix '" + rule->filter.source_ip_prefix + "' is NOT active in source_ip_trie_ for this rule.");
-        // Conceptual: source_ip_trie_->remove(parsed_prefix, rule->rule_id);
+        logger_.debug("Conceptual: Rule " + std::to_string(rule.rule_id) + " is disabled. Ensure src_ip_prefix '" + rule.filter.source_ip_prefix + "' is NOT active in source_ip_trie_ for this rule.");
+        // Conceptual: source_ip_trie_->remove(parsed_prefix, rule.rule_id);
     }
     // Similar for dest_ip_trie_
 
     // Example for source port range:
-    if (rule->enabled && (rule->filter.source_port_low != 0 || rule->filter.source_port_high != 0)) {
-        // Conceptual: source_port_tree_->insert(rule->filter.source_port_low, rule->filter.source_port_high, rule->rule_id);
-        logger_.debug("Conceptual: Add src_port_range [" + std::to_string(rule->filter.source_port_low) + "-" + std::to_string(rule->filter.source_port_high) + "] from rule " + std::to_string(rule->rule_id) + " to source_port_tree_.");
-    } else if (!rule->enabled && (rule->filter.source_port_low != 0 || rule->filter.source_port_high != 0)) {
-        logger_.debug("Conceptual: Rule " + std::to_string(rule->rule_id) + " is disabled. Ensure src_port_range is NOT active in source_port_tree_ for this rule.");
-        // Conceptual: source_port_tree_->remove(rule->filter.source_port_low, rule->filter.source_port_high, rule->rule_id);
+    if (rule.enabled && (rule.filter.source_port_low != 0 || rule.filter.source_port_high != 0)) {
+        // Conceptual: source_port_tree_->insert(rule.filter.source_port_low, rule.filter.source_port_high, rule.rule_id);
+        logger_.debug("Conceptual: Add src_port_range [" + std::to_string(rule.filter.source_port_low) + "-" + std::to_string(rule.filter.source_port_high) + "] from rule " + std::to_string(rule.rule_id) + " to source_port_tree_.");
+    } else if (!rule.enabled && (rule.filter.source_port_low != 0 || rule.filter.source_port_high != 0)) {
+        logger_.debug("Conceptual: Rule " + std::to_string(rule.rule_id) + " is disabled. Ensure src_port_range is NOT active in source_port_tree_ for this rule.");
+        // Conceptual: source_port_tree_->remove(rule.filter.source_port_low, rule.filter.source_port_high, rule.rule_id);
     }
     // Similar for dest_port_tree_
 
     // Example for Bloom Filter update when a rule is added/enabled
-    if (rule->enabled && use_bloom_filter_) {
+    if (rule.enabled && use_bloom_filter_) {
         // Add a representation of the rule to the Bloom filter.
         // This helps in pre-filtering packets if the Bloom filter is queried correctly.
         // The string representation needs to be consistent and capture the essence of the filter.
-        bloom_filter_->insert(rule->filter.toString()); 
-        logger_.debug("Conceptual: Updated Bloom Filter for enabled rule ID " + std::to_string(rule->rule_id));
+        bloom_filter_->insert(rule.filter.toString()); 
+        logger_.debug("Conceptual: Updated Bloom Filter for enabled rule ID " + std::to_string(rule.rule_id));
     }
     // Note: If a rule is disabled, removing its specific elements from a standard Bloom filter is not possible.
     // The filter would need to be rebuilt or be a Counting Bloom Filter.
