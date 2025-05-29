@@ -142,7 +142,7 @@ private:
     std::vector<std::function<void()>> tasks_; // Using vector as a simple queue
     std::mutex queue_mutex_;
     std::condition_variable condition_;
-    bool stop_;
+    std::atomic<bool> stop_; // Changed to atomic
 };
 
 } // namespace RcuUtils
