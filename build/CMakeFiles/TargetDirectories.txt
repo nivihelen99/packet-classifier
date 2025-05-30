@@ -1,0 +1,6 @@
+/app/build/CMakeFiles/packet_classifier_lib.dir
+/app/build/CMakeFiles/classifier_example.dir
+/app/build/CMakeFiles/unit_tests_runner.dir
+/app/build/CMakeFiles/test.dir
+/app/build/CMakeFiles/edit_cache.dir
+/app/build/CMakeFiles/rebuild_cache.dir

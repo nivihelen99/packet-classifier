@@ -41,30 +41,76 @@ void* MemoryPool::alignPointer(void* ptr, size_t alignment) {
 // On Linux, this might use numa_alloc_onnode / numa_free or mbind/set_mempolicy + aligned_alloc.
 // On Windows, VirtualAllocExNuma + HeapAlloc or _aligned_malloc.
 std::byte* MemoryPool::allocateNumaMemory(size_t bytes, int numa_node_id, bool align_to_cache_line) {
-    std::cout << "allocateNumaMemory (Placeholder): Requesting " << bytes << " bytes. NUMA node: " << numa_node_id 
-              << ", Align: " << align_to_cache_line << std::endl;
-    // Simple non-NUMA, potentially aligned allocation for skeleton
+    // std::cout << "allocateNumaMemory: Requesting " << bytes << " bytes. NUMA node: " << numa_node_id 
+    //           << ", Align: " << align_to_cache_line << std::endl;
     void* mem = nullptr;
-    size_t alignment = align_to_cache_line ? CACHE_LINE_SIZE : alignof(std::max_align_t);
+    size_t alignment_final = align_to_cache_line ? CACHE_LINE_SIZE : alignof(std::max_align_t);
 
-    // C++17 std::aligned_alloc (not available in C++11/14 directly in std lib, but _aligned_malloc etc. exist)
-    // For this skeleton, using malloc and warning if alignment is not guaranteed.
-    // A real implementation would use platform-specific aligned allocation.
-    if (align_to_cache_line || alignment > alignof(std::max_align_t)) {
-        // Using malloc here is a simplification. Real code needs aligned_alloc or platform equivalent.
-        // mem = std::aligned_alloc(alignment, bytes); // C11, C++17 (stdlib)
-        // For older C++ or broader compatibility:
-        // mem = _mm_malloc(bytes, alignment); // Intel intrinsics
-        // posix_memalign(&mem, alignment, bytes); // POSIX
-        std::cout << "Warning: Using basic malloc. Cache line alignment (" << alignment << "B) might not be guaranteed by this skeleton." << std::endl;
-        mem = std::malloc(bytes); // Basic allocation
+    if (bytes == 0) return nullptr; 
+
+    // posix_memalign requires alignment to be a power of two and a multiple of sizeof(void*).
+    // Step 1: Ensure it's a power of two.
+    if ((alignment_final & (alignment_final - 1)) != 0 || alignment_final == 0) { 
+        size_t pot_alignment = 1;
+        // Use original requested alignment (CACHE_LINE_SIZE or max_align_t) as base for finding next power of two
+        size_t base_for_pot = align_to_cache_line ? CACHE_LINE_SIZE : alignof(std::max_align_t);
+        while(pot_alignment < base_for_pot) {
+            pot_alignment <<= 1;
+            if (pot_alignment == 0) { // Overflow before reaching base_for_pot, highly unlikely
+                alignment_final = CACHE_LINE_SIZE; // Fallback
+                goto alignment_set; // Jump past further power-of-two logic
+            }
+        }
+        alignment_final = pot_alignment;
+    }
+  alignment_set:;
+
+    // Step 2: Ensure it's a multiple of sizeof(void*).
+    if (alignment_final % sizeof(void*) != 0) {
+        alignment_final = (alignment_final + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
+        // Re-check power of two, as aligning to sizeof(void*) might make it non-power-of-two
+        // if sizeof(void*) is not a power of two (very unlikely for typical systems).
+        if ((alignment_final & (alignment_final - 1)) != 0 || alignment_final == 0) {
+             size_t pot_alignment = 1;
+             size_t base_for_pot = align_to_cache_line ? CACHE_LINE_SIZE : alignof(std::max_align_t);
+             base_for_pot = std::max(base_for_pot, sizeof(void*)); // must be at least sizeof(void*)
+             while(pot_alignment < base_for_pot) {
+                pot_alignment <<= 1;
+                if (pot_alignment == 0) { alignment_final = CACHE_LINE_SIZE; goto final_alignment_decision;}
+             }
+             alignment_final = pot_alignment;
+        }
+    }
+  final_alignment_decision:;
+    // Ensure a minimum valid alignment if all else failed (e.g. if CACHE_LINE_SIZE was weirdly 0)
+    if (alignment_final == 0 || (alignment_final & (alignment_final -1)) != 0 || alignment_final % sizeof(void*) != 0) {
+        alignment_final = std::max(alignof(std::max_align_t), sizeof(void*));
+        // ensure power of two again for this ultimate fallback
+        if((alignment_final & (alignment_final -1)) != 0) {
+            size_t pot_align = 1; while(pot_align < alignment_final) pot_align <<=1; alignment_final = pot_align;
+        }
+    }
+
+
+    // Use posix_memalign if specific cache line alignment was requested,
+    // or if the natural alignment (max_align_t) is smaller than what we calculated (e.g. due to sizeof(void*) adjustment).
+    // Generally, if alignment_final > what malloc guarantees (roughly alignof(std::max_align_t)), use posix_memalign.
+    if (align_to_cache_line || alignment_final > alignof(std::max_align_t)) { 
+        if (posix_memalign(&mem, alignment_final, bytes) != 0) {
+            std::cerr << "Error: posix_memalign failed to allocate " << bytes 
+                      << " with alignment " << alignment_final << std::endl;
+            mem = nullptr; 
+        }
     } else {
-        mem = std::malloc(bytes);
+        // Standard malloc typically guarantees alignment for any fundamental type (i.e., alignof(std::max_align_t))
+        mem = std::malloc(bytes); 
+        if (!mem) {
+             std::cerr << "Error: std::malloc failed to allocate " << bytes << std::endl;
+        }
     }
 
     if (!mem) {
-        std::cerr << "Error: std::malloc failed to allocate " << bytes << std::endl;
-        return nullptr;
+        return nullptr; // Block constructor will throw bad_alloc
     }
     return static_cast<std::byte*>(mem);
 }

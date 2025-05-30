@@ -135,7 +135,17 @@ public:
     ~SimpleThreadPool();
 
     template<class F>
-    void enqueue(F&& f);
+    void enqueue(F&& f) {
+        if (stop_.load(std::memory_order_relaxed)) {
+            // Or throw: throw std::runtime_error("enqueue on stopped ThreadPool");
+            return;
+        }
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex_);
+            tasks_.emplace_back(std::forward<F>(f));
+        }
+        condition_.notify_one();
+    }
 
     void stop();
 
