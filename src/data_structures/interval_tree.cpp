@@ -116,20 +116,20 @@ std::unique_ptr<IntervalNode> IntervalTree::insertRecursive(std::unique_ptr<Inte
     int balance = getBalanceFactor(node.get());
 
     // Left Left Case
-    if (balance > 1 && new_interval->low < node->left->interval->low) {
+    if (balance > 1 && getBalanceFactor(node->left.get()) >= 0) {
         return rotateRight(std::move(node));
     }
-    // Right Right Case
-    if (balance < -1 && new_interval->low > node->right->interval->low) {
-        return rotateLeft(std::move(node));
-    }
     // Left Right Case
-    if (balance > 1 && new_interval->low > node->left->interval->low) {
+    if (balance > 1 && getBalanceFactor(node->left.get()) < 0) {
         node->left = rotateLeft(std::move(node->left));
         return rotateRight(std::move(node));
     }
+    // Right Right Case
+    if (balance < -1 && getBalanceFactor(node->right.get()) <= 0) {
+        return rotateLeft(std::move(node));
+    }
     // Right Left Case
-    if (balance < -1 && new_interval->low < node->right->interval->low) {
+    if (balance < -1 && getBalanceFactor(node->right.get()) > 0) {
         node->right = rotateRight(std::move(node->right));
         return rotateLeft(std::move(node));
     }

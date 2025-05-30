@@ -66,15 +66,31 @@ target_link_libraries(classifier_example PRIVATE packet_classifier_lib)
 #   DESTINATION lib/cmake/PacketClassifierLib
 # )
 
-# --- Optional: Testing (e.g., with CTest) ---
-# enable_testing()
-# add_test(NAME example_runs
-#     COMMAND classifier_example
-# )
-# Example: add_executable(run_tests tests/test_runner.cpp)
-# target_link_libraries(run_tests PRIVATE packet_classifier_lib Threads::Threads)
-# add_test(NAME unit_tests COMMAND run_tests)
+# --- Testing with Google Test ---
+enable_testing()
 
+find_package(GTest REQUIRED)
+
+# --- Test Executable ---
+add_executable(unit_tests_runner
+    tests/unit_tests/initial_setup_test.cpp
+    tests/unit_tests/compressed_trie_test.cpp
+    tests/unit_tests/concurrent_hash_test.cpp
+    tests/unit_tests/interval_tree_test.cpp
+    tests/unit_tests/bloom_filter_test.cpp
+    tests/unit_tests/memory_pool_test.cpp
+    tests/unit_tests/logging_test.cpp
+    tests/unit_tests/rule_manager_test.cpp
+    tests/unit_tests/threading_utils_test.cpp
+)
+
+target_link_libraries(unit_tests_runner PRIVATE
+    packet_classifier_lib
+    GTest::gtest
+    GTest::gtest_main
+)
+
+add_test(NAME UnitTests COMMAND unit_tests_runner)
 
 # --- Output ---
 message(STATUS "CMake Project: ${PROJECT_NAME}")
@@ -86,7 +102,12 @@ message(STATUS "Generator: ${CMAKE_GENERATOR}")
 # mkdir build
 # cd build
 # cmake ..
-# cmake --build . 
+# cmake --build .
 # or
 # make
 # ./examples/classifier_example (or ./classifier_example if executable is in build root)
+#
+# To run tests:
+# ctest (from build directory)
+# or
+# make test (if using Makefile generator)

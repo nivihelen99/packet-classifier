@@ -209,8 +209,8 @@ SimpleThreadPool::SimpleThreadPool(size_t num_threads) : stop_(false) {
                 std::function<void()> task;
                 {
                     std::unique_lock<std::mutex> lock(this->queue_mutex_);
-                    this->condition_.wait(lock, [this] { return this->stop_ || !this->tasks_.empty(); });
-                    if (this->stop_ && this->tasks_.empty()) {
+                    this->condition_.wait(lock, [this] { return this->stop_.load(std::memory_order_relaxed) || !this->tasks_.empty(); });
+                    if (this->stop_.load(std::memory_order_relaxed) && this->tasks_.empty()) {
                         return; // Exit worker thread
                     }
                     if (!this->tasks_.empty()) { // Check if tasks is empty before moving
@@ -237,19 +237,19 @@ SimpleThreadPool::~SimpleThreadPool() {
     stop();
 }
 
-template<class F>
-void SimpleThreadPool::enqueue(F&& f) {
-    if (stop_) {
-        // std::cout << "SimpleThreadPool: Enqueue on stopped pool. Ignoring." << std::endl;
-        // Or throw: throw std::runtime_error("enqueue on stopped ThreadPool");
-        return;
-    }
-    {
-        std::unique_lock<std::mutex> lock(queue_mutex_);
-        tasks_.emplace_back(std::forward<F>(f));
-    }
-    condition_.notify_one();
-}
+// template<class F>
+// void SimpleThreadPool::enqueue(F&& f) { // Definition moved to header
+// //    if (stop_) {
+// //        // std::cout << "SimpleThreadPool: Enqueue on stopped pool. Ignoring." << std::endl;
+// //        // Or throw: throw std::runtime_error("enqueue on stopped ThreadPool");
+// //        return;
+// //    }
+// //    {
+// //        std::unique_lock<std::mutex> lock(queue_mutex_);
+// //        tasks_.emplace_back(std::forward<F>(f));
+// //    }
+// //    condition_.notify_one();
+// }
 
 // Explicit instantiation for common types if needed, or keep in header for full template use.
 // For this skeleton, assuming it's used with std::function<void()> or compatible lambdas.
@@ -257,12 +257,12 @@ void SimpleThreadPool::enqueue(F&& f) {
 
 
 void SimpleThreadPool::stop() {
-    if(stop_) return; // Already stopping/stopped
+    if(stop_.load(std::memory_order_relaxed)) return; // Already stopping/stopped
 
     std::cout << "SimpleThreadPool: Stopping threads..." << std::endl;
     {
         std::unique_lock<std::mutex> lock(queue_mutex_);
-        stop_ = true;
+        stop_.store(true, std::memory_order_release);
     }
     condition_.notify_all();
     for (std::thread &worker : workers_) {
